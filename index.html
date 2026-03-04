@@ -524,9 +524,19 @@ let currentView = "dashboard";
 let compareStartDate = "", compareEndDate = "";
 
 // ── SETTINGS (persisted to localStorage) ──────────────────
-const DEFAULTS = { showTrueWeight:true, showSpikes:true, showLockedBadges:false, darkMode:true };
+const DEFAULTS = { showTrueWeight:true, showSpikes:true, showLockedBadges:false,
+  theme:'original', reminderEnabled:false, reminderTime:'07:00', customTemplates:[] };
 let settings = {...DEFAULTS};
 try { const s=localStorage.getItem('prophecy_settings'); if(s) settings={...DEFAULTS,...JSON.parse(s)}; } catch(e){}
+
+function applyTheme(name) {
+  const all = ['neon','military','blood','clean'];
+  document.body.classList.remove(...all.map(t=>'theme-'+t));
+  if (all.includes(name)) document.body.classList.add('theme-'+name);
+}
+// Apply saved theme immediately on load
+applyTheme(settings.theme || 'original');
+
 function saveSetting(key, val) {
   settings[key] = val;
   try { localStorage.setItem('prophecy_settings', JSON.stringify(settings)); } catch(e) {}
