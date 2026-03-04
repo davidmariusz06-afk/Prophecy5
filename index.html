@@ -2226,6 +2226,7 @@ window.update1RM = function() {
 async function saveWallPost(post) {
   if (!db) return;
   await set(ref(db, `wall/${post.id}`), post);
+}
 window.shareWeekPost = async function(userId) {
   const u = users.find(x => x.id === userId);
   if (!u || !u.entries || u.entries.length < 2) { alert("Need at least 2 weigh-ins to share a weekly summary."); return; }
@@ -3398,6 +3399,46 @@ window.submitEntry = async function() {
   await saveEntry(userId, { id:genId(), date, weight, note });
   window.showView("dashboard", {target: document.querySelector('[data-view="dashboard"]')});
 };
+window.showEditProfile = function(userId) {
+  const u = users.find(x => x.id===userId); if(!u) return;
+  const el = document.getElementById("confirmDialog");
+  el.style.display = "flex";
+  el.innerHTML = `<div class="confirm-dialog"><div class="confirm-box" style="max-width:440px;text-align:left">
+    <h3 style="color:var(--cyan);margin-bottom:18px">Edit Profile</h3>
+    <div class="form-group"><label>Name</label><input type="text" id="ep-name" value="${u.name}"></div>
+    <div class="form-group"><label>Starting Weight (lbs)</label><input type="number" id="ep-start" step="0.1" value="${u.startWeight}"></div>
+    <div class="form-group"><label>Goal Weight (lbs)</label><input type="number" id="ep-goal" step="0.1" value="${u.goalWeight??''}"></div>
+    <div class="form-group"><label>Height (inches)</label><input type="number" id="ep-height" value="${u.height??''}"></div>
+    <div class="form-group"><label>Body Fat % — optional, for FFMI</label><input type="number" id="ep-bf" step="0.1" value="${u.bodyFat??''}"></div>
+    <div class="form-group" style="margin-bottom:24px"><label>Current Phase</label>
+      <select id="ep-phase">
+        <option value="cut" ${u.phase==='cut'?'selected':''}>Cut</option>
+        <option value="bulk" ${u.phase==='bulk'?'selected':''}>Bulk</option>
+        <option value="maintain" ${u.phase==='maintain'?'selected':''}>Maintain</option>
+      </select>
+    </div>
+    <div class="confirm-btns">
+      <button class="btn" id="epSave" style="flex:1">Save Changes</button>
+      <button class="btn btn-danger" id="epCancel" style="flex:1">Cancel</button>
+    </div>
+  </div></div>`;
+  document.getElementById("epCancel").onclick = () => { el.style.display="none"; };
+  document.getElementById("epSave").onclick = async () => {
+    const name = document.getElementById("ep-name").value.trim();
+    const startWeight = parseFloat(document.getElementById("ep-start").value);
+    if (!name || !startWeight) { alert("Name and starting weight are required."); return; }
+    await set(ref(db, `users/${userId}/name`), name);
+    await set(ref(db, `users/${userId}/startWeight`), startWeight);
+    await set(ref(db, `users/${userId}/goalWeight`), parseFloat(document.getElementById("ep-goal").value)||null);
+    await set(ref(db, `users/${userId}/height`), parseFloat(document.getElementById("ep-height").value)||null);
+    await set(ref(db, `users/${userId}/bodyFat`), parseFloat(document.getElementById("ep-bf").value)||null);
+    await set(ref(db, `users/${userId}/phase`), document.getElementById("ep-phase").value);
+    el.style.display="none";
+  };
+};
+
+window.saveTeamGoal = saveTeamGoal;
+
 window.confirmDelUser = function(userId, userName) {
   showConfirm(`Remove ${userName}?`, `This permanently deletes ${userName} and all their data.`, async () => {
     await deleteUser(userId);
@@ -5225,60 +5266,62 @@ function renderVolumeTab(u) {
     <!-- LIFT FREQUENCY HEATMAP -->
     <div class="card" style="margin-bottom:16px">
       <div class="card-title"><span class="card-title-icon">📅</span>Lift Frequency — Last 12 Weeks
-        <span style="margin-left:auto;font-size:10px;color:#333">sessions containing each lift</span>
+        <span style="margin-left:auto;font-size:10px;color:#333">sets per week per exercise</span>
       </div>
-      ${(() => {
-        const weeks = 12;
-        const today = new Date();
-        // Get all unique exercises from sessions in range
-        const rangeStart = new Date(today); rangeStart.setDate(today.getDate() - weeks*7);
-        const recentSessions = sessions.filter(s => new Date(s.date+'T00:00:00') >= rangeStart);
-        // Count per exercise per week
-        const exCounts = {};
-        recentSessions.forEach(sess => {
-          const wk = new Date(sess.date+'T00:00:00');
-          const monday = new Date(wk); monday.setDate(wk.getDate() - wk.getDay() + (wk.getDay()===0?-6:1));
-          const wkKey = monday.toISOString().split('T')[0];
-          (sess.sets||[]).forEach(set => {
-            const ex = set.exercise||'Unknown';
-            if (!exCounts[ex]) exCounts[ex] = {};
-            exCounts[ex][wkKey] = (exCounts[ex][wkKey]||0) + 1;
-          });
-        });
-        // Top 8 most frequent exercises
-        const topEx = Object.entries(exCounts)
-          .map(([ex,wks]) => ({ex, total: Object.values(wks).reduce((s,v)=>s+v,0), wks}))
-          .sort((a,b) => b.total - a.total).slice(0,8);
-        if (!topEx.length) return '<div style="font-size:12px;color:#444;padding:12px 0">No exercise data yet.</div>';
-        // Build week labels
-        const wkLabels = [];
-        for (let w=weeks-1; w>=0; w--) {
-          const d = new Date(today); d.setDate(today.getDate() - d.getDay() + (d.getDay()===0?-6:1) - w*7);
-          wkLabels.push(d.toISOString().split('T')[0]);
-        }
-        const maxCount = Math.max(...topEx.flatMap(e=>Object.values(e.wks)));
-        let html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:separate;border-spacing:2px">';
-        html += '<tr><th style="text-align:left;font-size:9px;color:#444;padding:2px 8px 2px 0;white-space:nowrap">Exercise</th>';
-        wkLabels.forEach(wk => {
-          const d = new Date(wk+'T00:00:00');
-          html += `<th style="font-size:8px;color:#333;text-align:center;padding:2px;white-space:nowrap">${d.toLocaleDateString('en-US',{month:'numeric',day:'numeric'})}</th>`;
-        });
-        html += '<th style="font-size:9px;color:#444;padding:2px 0 2px 6px">Total</th></tr>';
-        topEx.forEach(({ex, total, wks}) => {
-          html += `<tr><td style="font-size:10px;color:#aaa;padding:3px 8px 3px 0;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis">${ex}</td>`;
-          wkLabels.forEach(wk => {
-            const c = wks[wk]||0;
-            const intensity = c ? Math.min(1, c/maxCount) : 0;
-            const bg = c ? \`rgba(105,255,71,\${0.15+intensity*0.7})\` : 'rgba(255,255,255,0.03)';
-            html += \`<td style="width:22px;height:22px;background:\${bg};border-radius:3px;text-align:center;font-size:9px;color:\${c?'#69ff47':'#222'}">\${c||''}</td>\`;
-          });
-          html += \`<td style="text-align:center;font-family:'Bebas Neue',sans-serif;font-size:14px;color:#69ff47;padding-left:8px">\${total}</td></tr>\`;
-        });
-        html += '</table></div>';
-        return html;
-      })()}
+      ${buildLiftHeatmapHTML(sessions)}
     </div>
-  `;
+  \`;
+}`
+
+function buildLiftHeatmapHTML(sessions) {
+  const weeks = 12;
+  const today = new Date();
+  const rangeStart = new Date(today); rangeStart.setDate(today.getDate() - weeks*7);
+  const recentSessions = sessions.filter(s => new Date(s.date+'T00:00:00') >= rangeStart);
+  const exCounts = {};
+  recentSessions.forEach(sess => {
+    const wk = new Date(sess.date+'T00:00:00');
+    const dow = wk.getDay();
+    const monday = new Date(wk); monday.setDate(wk.getDate() - (dow===0?6:dow-1));
+    const wkKey = monday.toISOString().split('T')[0];
+    (sess.sets||[]).forEach(set => {
+      const ex = set.exercise||'Unknown';
+      if (!exCounts[ex]) exCounts[ex] = {};
+      exCounts[ex][wkKey] = (exCounts[ex][wkKey]||0) + 1;
+    });
+  });
+  const topEx = Object.entries(exCounts)
+    .map(([ex,wks]) => ({ex, total:Object.values(wks).reduce((s,v)=>s+v,0), wks}))
+    .sort((a,b) => b.total-a.total).slice(0,8);
+  if (!topEx.length) return '<div style="font-size:12px;color:#444;padding:12px 0">Log training sessions to see lift frequency.</div>';
+  const wkLabels = [];
+  for (let w=weeks-1; w>=0; w--) {
+    const d = new Date(today);
+    const dow = d.getDay();
+    d.setDate(d.getDate() - (dow===0?6:dow-1) - w*7);
+    wkLabels.push(d.toISOString().split('T')[0]);
+  }
+  const maxCount = Math.max(1, ...topEx.flatMap(e=>Object.values(e.wks)));
+  let html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:separate;border-spacing:2px">';
+  html += '<tr><th style="text-align:left;font-size:9px;color:#444;padding:2px 8px 2px 0;white-space:nowrap">Exercise</th>';
+  wkLabels.forEach(wk => {
+    const d = new Date(wk+'T00:00:00');
+    html += '<th style="font-size:8px;color:#333;text-align:center;padding:2px;white-space:nowrap">' + (d.getMonth()+1) + '/' + d.getDate() + '</th>';
+  });
+  html += '<th style="font-size:9px;color:#444;padding:2px 0 2px 6px">Tot</th></tr>';
+  topEx.forEach(function(item) {
+    html += '<tr><td style="font-size:10px;color:#aaa;padding:3px 8px 3px 0;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis">' + item.ex + '</td>';
+    wkLabels.forEach(function(wk) {
+      const c = item.wks[wk]||0;
+      const alpha = c ? (0.15 + (c/maxCount)*0.7) : 0;
+      const bg = c ? ('rgba(105,255,71,' + alpha.toFixed(2) + ')') : 'rgba(255,255,255,0.03)';
+      const col = c ? '#69ff47' : '#222';
+      html += '<td style="width:22px;height:22px;background:' + bg + ';border-radius:3px;text-align:center;font-size:9px;color:' + col + '">' + (c||'') + '</td>';
+    });
+    html += '<td style="text-align:center;font-family:Bebas Neue,sans-serif;font-size:14px;color:#69ff47;padding-left:8px">' + item.total + '</td></tr>';
+  });
+  html += '</table></div>';
+  return html;
 }
 
 function mountVolumeChart(userId) {
