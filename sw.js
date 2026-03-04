@@ -1,6 +1,6 @@
 // The Prophecy — Service Worker
 // Bump CACHE_VERSION whenever you deploy an update
-const CACHE_VERSION = 'prophecy-v2';
+const CACHE_VERSION = 'prophecy-v3';
 
 const STATIC_ASSETS = [
   './',

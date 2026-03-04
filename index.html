@@ -1404,6 +1404,54 @@ async function deleteLiftPR(userId, liftKey, entryId) {
 }
 
 // Get sorted PR history for a lift
+// ── POWERLIFTING CONSTANTS ────────────────────────────────
+// Wilks2 (2020 updated formula — IPF standard)
+function calcWilks(total, bw, isMale=true) {
+  if (!total || !bw) return null;
+  const bwKg = bw / 2.2046226218;
+  const totKg = total / 2.2046226218;
+  let a, b, c, d, e, f;
+  if (isMale) {
+    a = -216.0475144; b = 16.2606339; c = -0.002388645;
+    d = -0.00113732; e = 7.01863e-6; f = -1.291e-8;
+  } else {
+    a = 594.31747775582; b = -27.23842536447; c = 0.82112226871;
+    d = -0.00930733913; e = 4.731582e-5; f = -9.054e-8;
+  }
+  const denom = a + b*bwKg + c*bwKg**2 + d*bwKg**3 + e*bwKg**4 + f*bwKg**5;
+  const coeff = 500 / denom;
+  return (coeff * totKg).toFixed(1);
+}
+
+function calcFFMI(weightLbs, heightIn, bodyFatPct) {
+  if (!weightLbs || !heightIn || !bodyFatPct) return null;
+  const weightKg = weightLbs / 2.2046;
+  const heightM  = (heightIn * 2.54) / 100;
+  const leanMass = weightKg * (1 - bodyFatPct / 100);
+  const ffmi = leanMass / (heightM * heightM);
+  const normalised = ffmi + 6.3 * (1.8 - heightM);
+  return { ffmi: ffmi.toFixed(1), norm: normalised.toFixed(1) };
+}
+
+function ffmiLabel(norm) {
+  const n = parseFloat(norm);
+  if (n < 16)  return { label:'Below Average',   color:'#666' };
+  if (n < 18)  return { label:'Average',          color:'#aaa' };
+  if (n < 20)  return { label:'Above Average',    color:'#ff6b2b' };
+  if (n < 22)  return { label:'Excellent',        color:'#ffe040' };
+  if (n < 23)  return { label:'Near Natty Peak',  color:'#69ff47' };
+  if (n < 25)  return { label:'Natural Elite',    color:'#00e5ff' };
+  if (n < 28)  return { label:'Enhanced',         color:'#c77dff' };
+  return               { label:'Enhanced — High', color:'#ff4d8d' };
+}
+
+const LIFTS = [
+  { key:"squat",    label:"Back Squat",     icon:"🟥", color:"#ff4d8d" },
+  { key:"bench",    label:"Bench Press",    icon:"🟦", color:"#00e5ff" },
+  { key:"deadlift", label:"Deadlift",       icon:"⬛", color:"#ffe040" },
+  { key:"ohp",      label:"Overhead Press", icon:"🟩", color:"#69ff47" },
+];
+
 function getLiftHistory(u, liftKey) {
   if (!u.prs || !u.prs[liftKey]) return [];
   const entries = Object.values(u.prs[liftKey]);
