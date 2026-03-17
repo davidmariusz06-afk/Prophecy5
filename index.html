@@ -2930,6 +2930,7 @@ function renderRaceToGoal() {
 let chartsRendered = false;
 let chartViewMode = 'individual'; // 'individual' | 'overlay'
 let overlayMode = 'raw'; // 'raw' | 'normalized'
+let chartExBlockFilter = ''; // block filter for Charts tab exercise frequency
 window.setChartMode = function(mode) { chartViewMode = mode; renderCharts(); };
 window.setChartExBlock = function(b) { chartExBlockFilter = b; renderCharts(); };
 window.setOverlayMode = function(mode) { overlayMode = mode; renderCharts(); };
@@ -4563,7 +4564,22 @@ const BLOCK_COLORS = {
   'Test Week':      '#c77dff',
   'Off Season':     '#888',
 };
-function blockColor(b) { return BLOCK_COLORS[b] || '#a855f7'; }
+function blockColor(b, userId) {
+  if (!b) return '#555';
+  if (BLOCK_COLORS[b]) return BLOCK_COLORS[b];
+  // Look up custom block color — use provided userId or fall back to active user
+  const uid = userId || activeUserId || (users[0] && users[0].id);
+  if (uid) {
+    const customColor = getCustomBlockColor(uid, b);
+    if (customColor && customColor !== '#a855f7') return customColor;
+    // Also check all users in case block is shared
+    for (const u of users) {
+      const c = getCustomBlockColor(u.id, b);
+      if (c && c !== '#a855f7') return c;
+    }
+  }
+  return '#a855f7';
+}
 
 // ── CUSTOM BLOCK PERSISTENCE ─────────────────────────────────
 const PRESET_BLOCKS = ['Accumulation','Intensification','Peaking','Deload','Test Week','Off Season'];
@@ -4578,7 +4594,12 @@ function getCustomBlocks(userId) {
 function addCustomBlock(userId, name, color) {
   if (!name || PRESET_BLOCKS.includes(name)) return;
   const existing = getCustomBlocks(userId);
-  if (existing.find(b => b.name === name)) return;
+  const already = existing.find(b => b.name === name);
+  if (already) {
+    // Update color if provided
+    if (color && color !== already.color) setCustomBlockColor(userId, name, color);
+    return;
+  }
   const entry = { name, color: color || '#a855f7' };
   try { localStorage.setItem('prophecy_custom_blocks_' + userId, JSON.stringify([...existing, entry])); } catch(e) {}
 }
